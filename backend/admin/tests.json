@@ -1,0 +1,19 @@
+{
+  "tests": [
+    {
+      "name": "List users authorized",
+      "method": "GET",
+      "path": "/",
+      "headers": {"X-Admin-Password": "test"},
+      "expectedStatus": 403,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "List users no auth",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 403,
+      "bodyMatcher": "partial"
+    }
+  ]
+}
