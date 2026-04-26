@@ -1,0 +1,19 @@
+{
+  "tests": [
+    {
+      "name": "Get history authorized",
+      "method": "GET",
+      "path": "/",
+      "headers": {"X-User-Id": "1"},
+      "expectedStatus": 200,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Unauthorized",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    }
+  ]
+}

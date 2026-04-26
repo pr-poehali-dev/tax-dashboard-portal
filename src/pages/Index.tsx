@@ -1,14 +1,33 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState } from 'react';
+import LoginPage from '@/components/LoginPage';
+import Dashboard from '@/components/Dashboard';
+
+export interface UserSession {
+  token: string;
+  user_id: number;
+  client_id: string;
+  full_name: string;
+  inn: string;
+}
 
 const Index = () => {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4 color-black text-black">Добро пожаловать!</h1>
-        <p className="text-xl text-gray-600">тут будет отображаться ваш проект</p>
-      </div>
-    </div>
-  );
+  const [session, setSession] = useState<UserSession | null>(() => {
+    const saved = localStorage.getItem('tax_session');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const handleLogin = (s: UserSession) => {
+    localStorage.setItem('tax_session', JSON.stringify(s));
+    setSession(s);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('tax_session');
+    setSession(null);
+  };
+
+  if (!session) return <LoginPage onLogin={handleLogin} />;
+  return <Dashboard session={session} onLogout={handleLogout} />;
 };
 
 export default Index;
