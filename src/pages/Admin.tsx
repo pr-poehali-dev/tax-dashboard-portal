@@ -71,6 +71,7 @@ const Admin = () => {
   const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
   const [confirmDeleteUser, setConfirmDeleteUser] = useState<User | null>(null);
   const [deletingRecordId, setDeletingRecordId] = useState<number | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
 
   const authHeaders = useCallback(() => ({ 'X-Admin-Password': password }), [password]);
 
@@ -160,6 +161,17 @@ const Admin = () => {
       fetchRecords(selectedUser.id);
       refreshUsers();
     }
+  };
+
+  const handleUpdateStatus = async (recordId: number, newStatus: string) => {
+    setUpdatingStatusId(recordId);
+    await fetch(ADMIN_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ record_id: recordId, status: newStatus }),
+    });
+    setUpdatingStatusId(null);
+    setRecords(prev => prev.map(r => r.id === recordId ? { ...r, status: newStatus } : r));
   };
 
   const handleDeleteRecord = async (recordId: number) => {
@@ -481,9 +493,17 @@ const Admin = () => {
                             {rec.due_date && <p className="text-xs text-muted-foreground mt-0.5">до {formatDate(rec.due_date)}</p>}
                           </div>
                           <div>
-                            <span className={`inline-block text-xs px-2 py-1 border ${STATUS_COLORS[rec.status] || STATUS_COLORS.pending}`}>
-                              {STATUS_LABELS[rec.status] || rec.status}
-                            </span>
+                            <select
+                              value={rec.status}
+                              disabled={updatingStatusId === rec.id}
+                              onChange={e => handleUpdateStatus(rec.id, e.target.value)}
+                              className={`text-xs px-2 py-1 border cursor-pointer focus:outline-none disabled:opacity-50 ${STATUS_COLORS[rec.status] || STATUS_COLORS.pending}`}
+                            >
+                              <option value="pending">Ожидает</option>
+                              <option value="paid">Оплачен</option>
+                              <option value="overdue">Просрочен</option>
+                              <option value="cancelled">Отменён</option>
+                            </select>
                           </div>
                           <div>
                             {rec.description && <p className="text-xs text-muted-foreground truncate">{rec.description}</p>}

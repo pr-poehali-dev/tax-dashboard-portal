@@ -138,6 +138,20 @@ def handler(event: dict, context) -> dict:
         conn.close()
         return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({'success': True, 'user_id': new_id})}
 
+    # PUT — обновить статус налоговой записи
+    if method == 'PUT':
+        body = json.loads(event.get('body') or '{}')
+        record_id = body.get('record_id')
+        new_status = body.get('status', '').strip()
+        allowed = ('pending', 'paid', 'overdue', 'cancelled')
+        if not record_id or new_status not in allowed:
+            conn.close()
+            return {'statusCode': 400, 'headers': CORS, 'body': json.dumps({'error': 'Укажите record_id и корректный статус'})}
+        cur.execute("UPDATE tax_records SET status = %s, updated_at = now() WHERE id = %s", (new_status, record_id))
+        conn.commit()
+        conn.close()
+        return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({'success': True})}
+
     # DELETE — удалить клиента или налоговую запись
     if method == 'DELETE':
         body = json.loads(event.get('body') or '{}')
