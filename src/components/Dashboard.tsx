@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { UserSession } from '@/pages/Index';
 import Icon from '@/components/ui/icon';
 import TaxRecords from '@/components/TaxRecords';
@@ -6,6 +6,7 @@ import TaxHistory from '@/components/TaxHistory';
 
 const CABINET_URL = 'https://functions.poehali.dev/55da48e4-e0f4-4cea-ad0c-d80ea71302b9';
 const HISTORY_URL = 'https://functions.poehali.dev/3ee6767d-9849-400d-b663-bcdb21b41844';
+const SUPPORT_URL = 'https://functions.poehali.dev/c44f54ad-be34-4ae2-8daf-d5256223c92e';
 
 interface Props {
   session: UserSession;
@@ -34,7 +35,15 @@ export interface HistoryItem {
   occurred_at: string;
 }
 
-type Tab = 'overview' | 'taxes' | 'history';
+interface SupportMsg {
+  id: number;
+  author: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+type Tab = 'overview' | 'taxes' | 'history' | 'support';
 
 const Dashboard = ({ session, onLogout }: Props) => {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
@@ -42,6 +51,13 @@ const Dashboard = ({ session, onLogout }: Props) => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loadingRecords, setLoadingRecords] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(false);
+
+  const [supportMsgs, setSupportMsgs] = useState<SupportMsg[]>([]);
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [supportText, setSupportText] = useState('');
+  const [supportSending, setSupportSending] = useState(false);
+  const [unreadFromAdmin, setUnreadFromAdmin] = useState(0);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const headers = { 'X-User-Id': String(session.user_id) };
 
@@ -61,20 +77,65 @@ const Dashboard = ({ session, onLogout }: Props) => {
     setLoadingHistory(false);
   };
 
+  const fetchSupport = async () => {
+    setSupportLoading(true);
+    const res = await fetch(SUPPORT_URL, { headers });
+    const data = await res.json();
+    const msgs: SupportMsg[] = data.messages || [];
+    setSupportMsgs(msgs);
+    setUnreadFromAdmin(0);
+    setSupportLoading(false);
+  };
+
+  const handleSendSupport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supportText.trim()) return;
+    setSupportSending(true);
+    await fetch(SUPPORT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify({ message: supportText.trim() }),
+    });
+    setSupportText('');
+    setSupportSending(false);
+    fetchSupport();
+  };
+
   useEffect(() => { fetchRecords(); }, []);
   useEffect(() => {
     if (activeTab === 'history' && history.length === 0) fetchHistory();
+    if (activeTab === 'support') fetchSupport();
   }, [activeTab]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [supportMsgs]);
+
+  // Проверяем непрочитанные от администратора при загрузке
+  useEffect(() => {
+    (async () => {
+      const res = await fetch(SUPPORT_URL, { headers });
+      const data = await res.json();
+      const msgs: SupportMsg[] = data.messages || [];
+      const unread = msgs.filter(m => m.author === 'admin' && !m.is_read).length;
+      setUnreadFromAdmin(unread);
+      setSupportMsgs(msgs);
+    })();
+  }, []);
 
   const totalPaid = records.filter(r => r.status === 'paid').reduce((s, r) => s + r.amount, 0);
   const totalPending = records.filter(r => r.status === 'pending').reduce((s, r) => s + r.amount, 0);
   const formatMoney = (n: number) => new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(n);
   const formatDate = (s: string) => new Date(s).toLocaleDateString('ru-RU');
 
-  const nav: { id: Tab; label: string; icon: string }[] = [
+  const formatTime = (s: string) =>
+    new Date(s).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+  const nav: { id: Tab; label: string; icon: string; badge?: number }[] = [
     { id: 'overview', label: 'Обзор', icon: 'LayoutDashboard' },
     { id: 'taxes', label: 'Налоговые данные', icon: 'FileText' },
     { id: 'history', label: 'История операций', icon: 'History' },
+    { id: 'support', label: 'Поддержка', icon: 'MessageSquare', badge: unreadFromAdmin },
   ];
 
   return (
@@ -94,10 +155,15 @@ const Dashboard = ({ session, onLogout }: Props) => {
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`nav-item w-full text-left ${activeTab === item.id ? 'active' : ''}`}
+              className={`nav-item w-full text-left relative ${activeTab === item.id ? 'active' : ''}`}
             >
               <Icon name={item.icon} size={14} />
               {item.label}
+              {item.badge != null && item.badge > 0 && (
+                <span className="ml-auto bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center shrink-0">
+                  {item.badge}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -219,6 +285,62 @@ const Dashboard = ({ session, onLogout }: Props) => {
           {/* HISTORY */}
           {activeTab === 'history' && (
             <TaxHistory history={history} loading={loadingHistory} />
+          )}
+
+          {/* SUPPORT */}
+          {activeTab === 'support' && (
+            <div className="max-w-2xl flex flex-col" style={{ height: 'calc(100vh - 170px)' }}>
+              <div className="mb-4">
+                <h3 className="text-xs uppercase tracking-widest text-muted-foreground">Чат с поддержкой</h3>
+                <p className="text-xs text-muted-foreground mt-1">Задайте вопрос — администратор ответит в ближайшее время</p>
+              </div>
+
+              <div className="flex-1 border border-border overflow-y-auto p-4 space-y-3 bg-card">
+                {supportLoading ? (
+                  <div className="text-muted-foreground text-sm text-center py-10">Загрузка...</div>
+                ) : supportMsgs.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <Icon name="MessageCircle" size={32} className="text-muted-foreground/30 mb-3" />
+                    <p className="text-muted-foreground text-sm">Нет сообщений</p>
+                    <p className="text-muted-foreground text-xs mt-1">Напишите нам — мы поможем!</p>
+                  </div>
+                ) : (
+                  supportMsgs.map(msg => (
+                    <div key={msg.id} className={`flex ${msg.author === 'client' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-xs lg:max-w-md px-4 py-2.5 ${
+                        msg.author === 'client'
+                          ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]'
+                          : 'bg-accent text-foreground border border-border'
+                      }`}>
+                        <p className="text-sm leading-relaxed">{msg.message}</p>
+                        <p className={`text-[10px] mt-1 ${msg.author === 'client' ? 'text-[hsl(var(--primary-foreground))]/70' : 'text-muted-foreground'}`}>
+                          {msg.author === 'client' ? 'Вы' : 'Поддержка'} · {formatTime(msg.created_at)}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              <form onSubmit={handleSendSupport} className="flex gap-3 mt-3">
+                <input
+                  value={supportText}
+                  onChange={e => setSupportText(e.target.value)}
+                  placeholder="Напишите сообщение..."
+                  className="flex-1 bg-background border border-border px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-[hsl(var(--primary))] transition-colors"
+                  disabled={supportSending}
+                />
+                <button
+                  type="submit"
+                  disabled={supportSending || !supportText.trim()}
+                  className="px-6 py-2.5 bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] text-xs uppercase tracking-widest font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
+                >
+                  <Icon name="Send" size={14} />
+                  Отправить
+                </button>
+              </form>
+            </div>
           )}
         </div>
       </main>

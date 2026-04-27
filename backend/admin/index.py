@@ -1,5 +1,5 @@
 """
-Панель администратора: список клиентов, добавление, удаление, управление налоговыми записями.
+Панель администратора: список клиентов, добавление, удаление, управление налоговыми записями, статистика.
 """
 import json
 import hashlib
@@ -33,13 +33,72 @@ def handler(event: dict, context) -> dict:
     conn = psycopg2.connect(os.environ['DATABASE_URL'])
     cur = conn.cursor()
 
-    # GET — список клиентов или записи конкретного клиента
+    # GET — список клиентов, записи клиента или статистика
     if method == 'GET':
         params = event.get('queryStringParameters') or {}
         user_id = params.get('user_id')
 
+        # Статистика
+        if params.get('action') == 'stats':
+            cur.execute("""
+                SELECT COALESCE(SUM(amount), 0) FROM tax_records
+                WHERE status = 'paid'
+                  AND DATE_TRUNC('month', updated_at) = DATE_TRUNC('month', NOW())
+            """)
+            paid_month = float(cur.fetchone()[0])
+
+            cur.execute("""
+                SELECT COALESCE(SUM(amount), 0) FROM tax_records
+                WHERE status = 'paid'
+                  AND DATE_TRUNC('year', updated_at) = DATE_TRUNC('year', NOW())
+            """)
+            paid_year = float(cur.fetchone()[0])
+
+            cur.execute("SELECT COALESCE(SUM(amount), 0) FROM tax_records WHERE status = 'paid'")
+            paid_total = float(cur.fetchone()[0])
+
+            cur.execute("SELECT COALESCE(SUM(amount), 0) FROM tax_records WHERE status = 'pending'")
+            pending_total = float(cur.fetchone()[0])
+
+            cur.execute("SELECT COALESCE(SUM(amount), 0) FROM tax_records WHERE status = 'overdue'")
+            overdue_total = float(cur.fetchone()[0])
+
+            cur.execute("SELECT COUNT(*) FROM users")
+            clients_count = int(cur.fetchone()[0])
+
+            cur.execute("SELECT status, COUNT(*) FROM tax_records GROUP BY status")
+            status_counts = {row[0]: int(row[1]) for row in cur.fetchall()}
+
+            cur.execute("SELECT COUNT(*) FROM support_messages WHERE author = 'client' AND is_read = FALSE")
+            unread_support = int(cur.fetchone()[0])
+
+            cur.execute("""
+                SELECT TO_CHAR(DATE_TRUNC('month', updated_at), 'YYYY-MM') AS month,
+                       COALESCE(SUM(amount), 0) AS total
+                FROM tax_records
+                WHERE status = 'paid' AND updated_at >= NOW() - INTERVAL '12 months'
+                GROUP BY month ORDER BY month
+            """)
+            monthly = [{'month': r[0], 'total': float(r[1])} for r in cur.fetchall()]
+
+            conn.close()
+            return {
+                'statusCode': 200,
+                'headers': CORS,
+                'body': json.dumps({
+                    'paid_month': paid_month,
+                    'paid_year': paid_year,
+                    'paid_total': paid_total,
+                    'pending_total': pending_total,
+                    'overdue_total': overdue_total,
+                    'clients_count': clients_count,
+                    'status_counts': status_counts,
+                    'unread_support': unread_support,
+                    'monthly': monthly,
+                })
+            }
+
         if user_id:
-            # Налоговые записи клиента
             cur.execute("""
                 SELECT id, tax_type, period, amount, status, due_date, description, created_at
                 FROM tax_records
@@ -50,11 +109,8 @@ def handler(event: dict, context) -> dict:
             conn.close()
             records = [
                 {
-                    'id': r[0],
-                    'tax_type': r[1],
-                    'period': r[2],
-                    'amount': float(r[3]),
-                    'status': r[4],
+                    'id': r[0], 'tax_type': r[1], 'period': r[2],
+                    'amount': float(r[3]), 'status': r[4],
                     'due_date': r[5].isoformat() if r[5] else None,
                     'description': r[6],
                     'created_at': r[7].isoformat() if r[7] else None,
@@ -63,7 +119,6 @@ def handler(event: dict, context) -> dict:
             ]
             return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({'records': records})}
 
-        # Список всех клиентов
         cur.execute("""
             SELECT u.id, u.client_id, u.full_name, u.inn, u.created_at,
                    COUNT(DISTINCT r.id) AS records_count
@@ -76,11 +131,8 @@ def handler(event: dict, context) -> dict:
         conn.close()
         users = [
             {
-                'id': r[0],
-                'client_id': r[1],
-                'full_name': r[2],
-                'inn': r[3],
-                'created_at': r[4].isoformat() if r[4] else None,
+                'id': r[0], 'client_id': r[1], 'full_name': r[2],
+                'inn': r[3], 'created_at': r[4].isoformat() if r[4] else None,
                 'records_count': r[5],
             }
             for r in rows
@@ -113,7 +165,6 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({'success': True, 'record_id': new_id})}
 
-        # Добавить клиента
         client_id = body.get('client_id', '').strip()
         password = body.get('password', '').strip()
         full_name = body.get('full_name', '').strip()
