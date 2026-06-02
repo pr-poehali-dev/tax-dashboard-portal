@@ -90,6 +90,22 @@ def handler(event: dict, context) -> dict:
                 })
             }
 
+        # --- Заказы магазина ---
+        if act == 'orders':
+            cur.execute("""
+                SELECT id, user_id, period, amount, status, due_date, description, created_at
+                FROM tax_records WHERE tax_type = '__order__'
+                ORDER BY created_at DESC
+            """)
+            rows = cur.fetchall()
+            conn.close()
+            orders = [{
+                'id': r[0], 'user_id': r[1], 'items': r[2], 'total': float(r[3]),
+                'status': r[4], 'address': r[5] if r[5] else '',
+                'description': r[6] or '', 'created_at': r[7].isoformat() if r[7] else None,
+            } for r in rows]
+            return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({'orders': orders})}
+
         # --- Отчёт по клиенту (или по всем) ---
         if act == 'report':
             user_id = params.get('user_id')
@@ -220,7 +236,7 @@ def handler(event: dict, context) -> dict:
             status = body.get('status', 'pending')
             due_date = body.get('due_date') or None
             description = body.get('description', '').strip() or None
-            if not user_id or not tax_type or not period or amount is None:
+            if not tax_type or not period or amount is None:
                 conn.close()
                 return {'statusCode': 400, 'headers': CORS, 'body': json.dumps({'error': 'Заполните тип, период и сумму'})}
             cur.execute(

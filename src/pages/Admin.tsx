@@ -38,12 +38,14 @@ const fmtDate = (s: string) => new Date(s).toLocaleDateString('ru-RU', { day: 'n
 const fmtTime = (s: string) => new Date(s).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 const fmtShort = (s: string) => new Date(s).toLocaleDateString('ru-RU');
 
-type AdminTab = 'dashboard' | 'clients' | 'notes' | 'fines' | 'calc' | 'report' | 'support';
+type AdminTab = 'dashboard' | 'clients' | 'notes' | 'fines' | 'calc' | 'report' | 'support' | 'shop' | 'orders';
 
 const TABS: { id: AdminTab; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Дашборд', icon: 'LayoutDashboard' },
-  { id: 'clients', label: 'Клиенты', icon: 'Users' },
+  { id: 'clients', label: 'Игроки', icon: 'Users' },
   { id: 'fines', label: 'Штрафы', icon: 'AlertOctagon' },
+  { id: 'shop', label: 'Магазин', icon: 'ShoppingBag' },
+  { id: 'orders', label: 'Заказы', icon: 'PackageCheck' },
   { id: 'notes', label: 'Заметки', icon: 'StickyNote' },
   { id: 'calc', label: 'Калькулятор', icon: 'Calculator' },
   { id: 'report', label: 'Отчёт', icon: 'FileBarChart' },
@@ -108,6 +110,17 @@ export default function Admin() {
   const [replyText, setReplyText] = useState('');
   const [replySending, setReplySending] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Shop / Orders
+  interface AdminProduct { id: number; name: string; price: number; status: string; image_url: string | null; description: string; }
+  interface AdminOrder { id: number; user_id: number; items: string; total: number; status: string; address: string; description: string; created_at: string; }
+  const [shopProducts, setShopProducts] = useState<AdminProduct[]>([]);
+  const [shopOrders, setShopOrders] = useState<AdminOrder[]>([]);
+  const [shopLoading, setShopLoading] = useState(false);
+  const [productForm, setProductForm] = useState({ name: '', price: '', description: '', image_url: '' });
+  const [productSaving, setProductSaving] = useState(false);
+  const [productMsg, setProductMsg] = useState('');
+  const [productErr, setProductErr] = useState('');
 
   // Calculator
   const [calcBase, setCalcBase] = useState('');
@@ -178,6 +191,54 @@ export default function Admin() {
     setDialogs(prev => prev.map(d => d.user_id === uid ? { ...d, unread: 0 } : d));
   }, [ah]);
 
+  const CABINET_URL_ADMIN = 'https://functions.poehali.dev/55da48e4-e0f4-4cea-ad0c-d80ea71302b9';
+
+  const fetchShopAdmin = useCallback(async () => {
+    setShopLoading(true);
+    try {
+      const [prod, ord] = await Promise.all([
+        fetch(`${CABINET_URL_ADMIN}?action=catalog`).then(r => r.json()),
+        fetch(`${ADMIN_URL}?action=orders`, { headers: ah() }).then(r => r.json()).catch(() => ({ orders: [] })),
+      ]);
+      setShopProducts(prod.products || []);
+      setShopOrders(ord.orders || []);
+    } catch { /* ignore */ }
+    setShopLoading(false);
+  }, [ah]);
+
+  const handleAddProduct = async (e: React.FormEvent) => {
+    e.preventDefault(); setProductMsg(''); setProductErr(''); setProductSaving(true);
+    try {
+      const r = await fetch(ADMIN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...ah(), 'X-Action': 'add_tax_record' },
+        body: JSON.stringify({
+          user_id: null,
+          tax_type: '__product__',
+          period: productForm.name,
+          amount: parseFloat(productForm.price),
+          status: 'pending',
+          due_date: productForm.image_url || null,
+          description: productForm.description,
+        }),
+      });
+      const d = await r.json();
+      if (d.success) { setProductMsg('Товар добавлен!'); setProductForm({ name: '', price: '', description: '', image_url: '' }); fetchShopAdmin(); }
+      else setProductErr(d.error || 'Ошибка');
+    } catch { setProductErr('Ошибка соединения'); }
+    setProductSaving(false);
+  };
+
+  const handleDeleteProduct = async (id: number) => {
+    await fetch(ADMIN_URL, { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...ah(), 'X-Action': 'delete_tax_record' }, body: JSON.stringify({ record_id: id }) });
+    fetchShopAdmin();
+  };
+
+  const handleUpdateOrderStatus = async (orderId: number, status: string) => {
+    await fetch(ADMIN_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...ah() }, body: JSON.stringify({ record_id: orderId, status }) });
+    fetchShopAdmin();
+  };
+
   useEffect(() => {
     if (!authed) return;
     if (activeTab === 'dashboard') fetchStats();
@@ -185,6 +246,7 @@ export default function Admin() {
     if (activeTab === 'fines') fetchFines();
     if (activeTab === 'support') fetchDialogs();
     if (activeTab === 'report') loadSummary();
+    if (activeTab === 'shop' || activeTab === 'orders') fetchShopAdmin();
   }, [authed, activeTab]);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -983,6 +1045,115 @@ export default function Admin() {
                 </form>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== SHOP ===== */}
+      {activeTab === 'shop' && (
+        <div className="flex-1 overflow-auto p-8">
+          <div className="max-w-4xl mx-auto space-y-6">
+            {/* Добавить товар */}
+            <div className="border border-border p-6">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-4 flex items-center gap-2"><Icon name="Plus" size={13} />Добавить товар</p>
+              <form onSubmit={handleAddProduct} className="space-y-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Название *</label>
+                    <input value={productForm.name} onChange={e => setProductForm(p => ({ ...p, name: e.target.value }))} placeholder="Алмазный меч" required
+                      className="w-full bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:border-[hsl(var(--primary))]" disabled={productSaving} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Цена ₽ *</label>
+                    <input type="number" value={productForm.price} onChange={e => setProductForm(p => ({ ...p, price: e.target.value }))} placeholder="999" required
+                      className="w-full bg-background border border-border px-3 py-2 text-sm font-mono focus:outline-none focus:border-[hsl(var(--primary))]" disabled={productSaving} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Ссылка на фото</label>
+                    <input value={productForm.image_url} onChange={e => setProductForm(p => ({ ...p, image_url: e.target.value }))} placeholder="https://..."
+                      className="w-full bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:border-[hsl(var(--primary))]" disabled={productSaving} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Описание</label>
+                  <textarea value={productForm.description} onChange={e => setProductForm(p => ({ ...p, description: e.target.value }))} rows={2} placeholder="Описание товара для покупателей"
+                    className="w-full bg-background border border-border px-3 py-2 text-sm resize-none focus:outline-none focus:border-[hsl(var(--primary))]" disabled={productSaving} />
+                </div>
+                <div className="flex items-center gap-4">
+                  <button type="submit" disabled={productSaving} className="px-6 py-2.5 bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] text-xs uppercase tracking-widest hover:opacity-90 disabled:opacity-50">
+                    {productSaving ? '...' : 'Добавить товар'}
+                  </button>
+                  {productMsg && <p className="text-green-600 text-xs border-l border-green-600 pl-2 flex items-center gap-1"><Icon name="Check" size={12} />{productMsg}</p>}
+                  {productErr && <p className="text-destructive text-xs border-l border-destructive pl-2">{productErr}</p>}
+                </div>
+              </form>
+            </div>
+
+            {/* Каталог */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Icon name="ShoppingBag" size={12} />Товары в каталоге <span className="font-mono">{shopProducts.length}</span></p>
+                <button onClick={fetchShopAdmin} className="text-muted-foreground hover:text-foreground"><Icon name="RefreshCw" size={13} /></button>
+              </div>
+              {shopLoading ? <div className="text-muted-foreground text-sm text-center py-8 border border-border">Загрузка...</div>
+                : shopProducts.length === 0 ? <div className="text-muted-foreground text-sm text-center py-8 border border-border">Товаров нет</div>
+                  : (
+                    <div className="grid grid-cols-3 gap-4">
+                      {shopProducts.map(p => (
+                        <div key={p.id} className="border border-border overflow-hidden group">
+                          {p.image_url ? <img src={p.image_url} alt={p.name} className="w-full h-32 object-cover" />
+                            : <div className="w-full h-32 bg-accent flex items-center justify-center text-3xl">📦</div>}
+                          <div className="p-3">
+                            <p className="text-sm font-medium">{p.name}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{p.description}</p>
+                            <div className="flex items-center justify-between mt-2">
+                              <p className="text-sm font-mono text-[hsl(var(--primary))]">{p.price.toLocaleString('ru-RU')} ₽</p>
+                              <button onClick={() => handleDeleteProduct(p.id)} className="p-1 text-muted-foreground hover:text-destructive"><Icon name="Trash2" size={13} /></button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== ORDERS ===== */}
+      {activeTab === 'orders' && (
+        <div className="flex-1 overflow-auto p-8">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Icon name="PackageCheck" size={12} />Заказы игроков <span className="font-mono">{shopOrders.length}</span></p>
+              <button onClick={fetchShopAdmin} className="text-muted-foreground hover:text-foreground"><Icon name="RefreshCw" size={13} /></button>
+            </div>
+            {shopLoading ? <div className="text-muted-foreground text-sm text-center py-10 border border-border">Загрузка...</div>
+              : shopOrders.length === 0 ? <div className="text-muted-foreground text-sm text-center py-10 border border-border">Заказов нет</div>
+                : (
+                  <div className="border border-border overflow-hidden">
+                    <div className="grid grid-cols-6 gap-0 border-b border-border bg-muted px-4 py-2">
+                      {['Заказ', 'Игрок', 'Товары', 'Адрес доставки', 'Сумма', 'Статус'].map(h => <p key={h} className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">{h}</p>)}
+                    </div>
+                    {shopOrders.map((o, idx) => (
+                      <div key={o.id} className={`grid grid-cols-6 gap-0 px-4 py-3 items-center hover:bg-accent ${idx < shopOrders.length - 1 ? 'border-b border-border' : ''}`}>
+                        <p className="text-sm font-mono">#{o.id}</p>
+                        <p className="text-xs text-muted-foreground">{users.find(u => u.id === o.user_id)?.full_name || `ID ${o.user_id}`}</p>
+                        <p className="text-xs truncate">{o.items}</p>
+                        <p className="text-xs text-muted-foreground truncate">📍 {o.address}</p>
+                        <p className="text-sm font-mono text-[hsl(var(--primary))]">{o.total.toLocaleString('ru-RU')} ₽</p>
+                        <select value={o.status} onChange={e => handleUpdateOrderStatus(o.id, e.target.value)}
+                          className={`text-[10px] px-2 py-1 border cursor-pointer focus:outline-none ${o.status === 'paid' || o.status === 'delivered' ? 'text-green-600 bg-green-50 border-green-200' : o.status === 'overdue' || o.status === 'cancelled' ? 'text-red-600 bg-red-50 border-red-200' : 'text-yellow-600 bg-yellow-50 border-yellow-200'}`}>
+                          <option value="pending">Ожидает</option>
+                          <option value="processing">В обработке</option>
+                          <option value="paid">Оплачен</option>
+                          <option value="delivered">Доставлен</option>
+                          <option value="cancelled">Отменён</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                )}
           </div>
         </div>
       )}
