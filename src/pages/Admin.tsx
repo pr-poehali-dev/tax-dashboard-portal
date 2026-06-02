@@ -300,40 +300,82 @@ export default function Admin() {
   };
 
   // ============ PDF ============
+  const fmtRub = (n: number) => `${n.toLocaleString('ru-RU')} руб.`;
+
   const downloadReport = () => {
     const doc = new jsPDF();
     const dateStr = new Date().toLocaleDateString('ru-RU');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
     doc.text('Налоговый отчёт', 14, 20);
-    doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
     doc.text(`Дата формирования: ${dateStr}`, 14, 28);
 
     if (reportMode === 'summary') {
+      // Итоговые строки перед таблицей
+      const totalPaid = summaryData.reduce((s, r) => s + r.paid, 0);
+      const totalPending = summaryData.reduce((s, r) => s + r.pending, 0);
+      const totalOverdue = summaryData.reduce((s, r) => s + r.overdue, 0);
+      const totalFines = summaryData.reduce((s, r) => s + r.fines, 0);
+      doc.setFontSize(9);
+      doc.text(`Всего клиентов: ${summaryData.length}`, 14, 36);
+      doc.text(`Итого оплачено: ${fmtRub(totalPaid)}`, 14, 42);
+      doc.text(`Итого к оплате: ${fmtRub(totalPending)}`, 14, 48);
+      doc.text(`Итого просрочено: ${fmtRub(totalOverdue)}`, 14, 54);
+      if (totalFines > 0) doc.text(`Итого штрафов: ${fmtRub(totalFines)}`, 14, 60);
+
       autoTable(doc, {
-        startY: 35,
-        head: [['Клиент', 'ID', 'ИНН', 'Оплачено', 'К оплате', 'Просрочено', 'Штрафы']],
-        body: summaryData.map(r => [r.full_name, r.client_id, r.inn || '—', fmt(r.paid), fmt(r.pending), fmt(r.overdue), fmt(r.fines)]),
+        startY: totalFines > 0 ? 66 : 62,
+        head: [['Клиент', 'ID клиента', 'ИНН', 'Оплачено', 'К оплате', 'Просрочено', 'Штрафы']],
+        body: summaryData.map(r => [
+          r.full_name,
+          r.client_id,
+          r.inn || 'не указан',
+          fmtRub(r.paid),
+          fmtRub(r.pending),
+          fmtRub(r.overdue),
+          r.fines > 0 ? fmtRub(r.fines) : 'нет',
+        ]),
+        foot: [['ИТОГО', '', '', fmtRub(totalPaid), fmtRub(totalPending), fmtRub(totalOverdue), fmtRub(totalFines)]],
         styles: { fontSize: 8 },
         headStyles: { fillColor: [30, 30, 30] },
+        footStyles: { fillColor: [60, 60, 60], fontStyle: 'bold' },
       });
     } else {
       const client = reportData[0];
       if (client) {
-        doc.setFontSize(12);
-        doc.text(`Клиент: ${client.full_name}`, 14, 35);
-        doc.text(`ID: ${client.client_id}  ИНН: ${client.inn || '—'}`, 14, 42);
+        doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+        doc.text(`Клиент: ${client.full_name}`, 14, 36);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+        doc.text(`Идентификатор: ${client.client_id}`, 14, 43);
+        doc.text(`ИНН: ${client.inn || 'не указан'}`, 14, 49);
+        // Итоги по клиенту
+        const clientPaid = reportData.filter(r => r.status === 'paid').reduce((s, r) => s + r.amount, 0);
+        const clientPending = reportData.filter(r => r.status === 'pending').reduce((s, r) => s + r.amount, 0);
+        const clientFines = reportData.reduce((s, r) => s + r.fine_amount, 0);
+        doc.setFontSize(9);
+        doc.text(`Всего записей: ${reportData.length} шт.`, 14, 57);
+        doc.text(`Оплачено налогов: ${fmtRub(clientPaid)}`, 14, 63);
+        doc.text(`Ожидает оплаты: ${fmtRub(clientPending)}`, 14, 69);
+        if (clientFines > 0) doc.text(`Штрафы: ${fmtRub(clientFines)}`, 14, 75);
       }
       autoTable(doc, {
-        startY: 50,
-        head: [['Налог', 'Период', 'Сумма', 'Статус', 'Срок оплаты', 'Штраф']],
-        body: reportData.map(r => [r.tax_type, r.period, fmt(r.amount), STATUS_LABELS[r.status] || r.status, r.due_date ? fmtShort(r.due_date) : '—', r.fine_amount > 0 ? fmt(r.fine_amount) : '—']),
+        startY: reportData[0]?.fine_amount > 0 ? 82 : 78,
+        head: [['Вид налога', 'Период', 'Сумма', 'Статус', 'Срок оплаты', 'Штраф']],
+        body: reportData.map(r => [
+          r.tax_type,
+          r.period,
+          fmtRub(r.amount),
+          STATUS_LABELS[r.status] || r.status,
+          r.due_date ? new Date(r.due_date).toLocaleDateString('ru-RU') : 'не указан',
+          r.fine_amount > 0 ? fmtRub(r.fine_amount) : 'нет',
+        ]),
         styles: { fontSize: 8 },
         headStyles: { fillColor: [30, 30, 30] },
       });
     }
-    doc.save(`report_${dateStr}.pdf`);
+    doc.save(`report_${dateStr.replace(/\./g, '-')}.pdf`);
   };
 
   const downloadReceipt = (rec: TaxRecord, user: User) => {
@@ -362,12 +404,14 @@ export default function Admin() {
     if (rec.description) doc.text(`Примечание: ${rec.description}`, 14, 106);
     doc.line(14, 112, 196, 112);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-    doc.text(`ИТОГО К ОПЛАТЕ: ${fmt(rec.amount)}`, 105, 124, { align: 'center' });
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-    doc.text(`Статус: ${STATUS_LABELS[rec.status] || rec.status}`, 105, 132, { align: 'center' });
-    doc.line(14, 138, 196, 138);
+    doc.text(`ИТОГО К ОПЛАТЕ: ${fmtRub(rec.amount)}`, 105, 124, { align: 'center' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+    doc.text(`Сумма прописью: ${rec.amount.toLocaleString('ru-RU')} рублей 00 копеек`, 14, 132);
+    doc.setFontSize(9);
+    doc.text(`Статус платежа: ${STATUS_LABELS[rec.status] || rec.status}`, 14, 139);
+    doc.line(14, 145, 196, 145);
     doc.setFontSize(8);
-    doc.text('Данный документ сформирован автоматически налоговым порталом', 105, 145, { align: 'center' });
+    doc.text('Данный документ сформирован автоматически налоговым порталом', 105, 152, { align: 'center' });
     doc.save(`receipt_${num}.pdf`);
   };
 
@@ -421,8 +465,8 @@ export default function Admin() {
       {/* Header */}
       <header className="border-b border-border px-6 py-3 flex items-center justify-between shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <Icon name="ShieldCheck" size={16} className="text-[hsl(var(--primary))]" />
-          <span className="font-display text-xl text-foreground">Панель управления</span>
+          <span className="text-xl">⚙️</span>
+          <span className="font-display text-xl text-foreground">Панель администратора</span>
         </div>
         <div className="flex items-center flex-wrap gap-1">
           {TABS.map(tab => (
@@ -436,7 +480,7 @@ export default function Admin() {
             </button>
           ))}
           <div className="w-px h-5 bg-border mx-1" />
-          <a href="/" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground uppercase tracking-widest"><Icon name="ExternalLink" size={12} />Кабинет</a>
+          <a href="/" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground uppercase tracking-widest"><Icon name="ExternalLink" size={12} />Портал</a>
           <button onClick={() => { sessionStorage.removeItem('admin_pwd'); setAuthed(false); setSelectedUser(null); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground uppercase tracking-widest ml-2">
             <Icon name="LogOut" size={12} />Выйти
           </button>
@@ -449,9 +493,9 @@ export default function Admin() {
           {statsLoading ? <div className="text-muted-foreground text-center py-20">Загрузка...</div> : stats ? (
             <div className="max-w-5xl mx-auto space-y-8">
               <div>
-                <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Оплачено налогов</h2>
+                <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Активы игроков (выдано)</h2>
                 <div className="grid grid-cols-3 gap-4">
-                  {[['За месяц', stats.paid_month, 'primary'], ['За год', stats.paid_year, 'foreground'], ['За всё время', stats.paid_total, 'foreground']].map(([label, val, color]) => (
+                  {[['За этот месяц', stats.paid_month, 'primary'], ['За этот год', stats.paid_year, 'foreground'], ['За всё время', stats.paid_total, 'foreground']].map(([label, val, color]) => (
                     <div key={label as string} className="border border-border p-6">
                       <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">{label as string}</p>
                       <p className={`font-display text-3xl ${color === 'primary' ? 'text-[hsl(var(--primary))]' : 'text-foreground'}`}>{fmt(val as number)}</p>
@@ -460,9 +504,9 @@ export default function Admin() {
                 </div>
               </div>
               <div className="grid grid-cols-4 gap-4">
-                <div className="border border-border p-5"><p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Клиентов</p><p className="font-display text-2xl">{stats.clients_count}</p></div>
-                <div className="border border-border p-5"><p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">К оплате</p><p className="font-display text-2xl text-yellow-600">{fmt(stats.pending_total)}</p></div>
-                <div className="border border-border border-l-2 border-l-destructive p-5"><p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Просрочено</p><p className="font-display text-2xl text-destructive">{fmt(stats.overdue_total)}</p></div>
+                <div className="border border-border p-5"><p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Игроков</p><p className="font-display text-2xl">{stats.clients_count}</p></div>
+                <div className="border border-border p-5"><p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Активные записи</p><p className="font-display text-2xl text-yellow-600">{fmt(stats.pending_total)}</p></div>
+                <div className="border border-border border-l-2 border-l-destructive p-5"><p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Заблокировано</p><p className="font-display text-2xl text-destructive">{fmt(stats.overdue_total)}</p></div>
                 <div className="border border-border p-5 cursor-pointer hover:bg-accent" onClick={() => setActiveTab('support')}><p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Новых сообщений</p><p className="font-display text-2xl">{stats.unread_support}</p></div>
               </div>
               <div>
@@ -478,7 +522,7 @@ export default function Admin() {
               </div>
               {stats.monthly.length > 0 && (
                 <div>
-                  <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Оплаты по месяцам</h2>
+                  <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-4">Активность по месяцам</h2>
                   <div className="border border-border p-6">
                     <div className="flex items-end gap-2 h-32">
                       {(() => { const maxV = Math.max(...stats.monthly.map(m => m.total), 1); return stats.monthly.map(m => (
@@ -504,9 +548,9 @@ export default function Admin() {
         <div className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 57px)' }}>
           <div className="w-72 border-r border-border flex flex-col shrink-0 overflow-hidden">
             <div className="p-4 border-b border-border shrink-0">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2"><Icon name="UserPlus" size={12} />Новый клиент</p>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2"><Icon name="UserPlus" size={12} />Новый игрок</p>
               <form onSubmit={handleAddUser} className="space-y-2">
-                {[{ k: 'client_id', l: 'ID *', p: 'Логин' }, { k: 'password', l: 'Пароль *', p: '••••••••', t: 'password' }, { k: 'full_name', l: 'ФИО *', p: 'Иванов Иван' }, { k: 'inn', l: 'ИНН', p: '000000000000' }].map(f => (
+                {[{ k: 'client_id', l: 'Ник / ID *', p: 'Steve2024' }, { k: 'password', l: 'Пароль *', p: '••••••••', t: 'password' }, { k: 'full_name', l: 'Имя игрока *', p: 'Иванов Иван' }, { k: 'inn', l: 'Доп. инфо', p: 'Discord, VK...' }].map(f => (
                   <div key={f.k}>
                     <label className="block text-[10px] text-muted-foreground mb-0.5">{f.l}</label>
                     <input type={f.t || 'text'} value={(userForm as Record<string, string>)[f.k]} onChange={e => setUserForm(p => ({ ...p, [f.k]: e.target.value }))} placeholder={f.p}
@@ -520,7 +564,7 @@ export default function Admin() {
             </div>
             <div className="flex-1 overflow-y-auto">
               <div className="px-4 py-2 border-b border-border sticky top-0 bg-background">
-                <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Icon name="Users" size={11} />Клиенты <span className="ml-auto font-mono">{users.length}</span></p>
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Icon name="Users" size={11} />Игроки <span className="ml-auto font-mono">{users.length}</span></p>
               </div>
               {loadingUsers ? <div className="text-muted-foreground text-xs text-center py-6">...</div> : users.map(u => (
                 <div key={u.id} onClick={() => openUser(u)} className={`px-4 py-2.5 border-b border-border cursor-pointer hover:bg-accent flex items-center justify-between group ${selectedUser?.id === u.id ? 'bg-accent' : ''}`}>
@@ -551,10 +595,10 @@ export default function Admin() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2"><Icon name="Plus" size={12} />Добавить запись</p>
+                  <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2"><Icon name="Plus" size={12} />Добавить предмет / запись</p>
                   <form onSubmit={handleAddTax} className="space-y-3">
                     <div className="grid grid-cols-3 gap-3">
-                      {[{ k: 'tax_type', l: 'Тип *', p: 'НДС, УСН...' }, { k: 'period', l: 'Период *', p: 'Q1 2024' }].map(f => (
+                      {[{ k: 'tax_type', l: 'Название *', p: 'Алмазный меч, Земля...' }, { k: 'period', l: 'Категория *', p: 'weapon, land, bank...' }].map(f => (
                         <div key={f.k}>
                           <label className="block text-xs text-muted-foreground mb-1">{f.l}</label>
                           <input value={(taxForm as Record<string, string>)[f.k]} onChange={e => setTaxForm(p => ({ ...p, [f.k]: e.target.value }))} placeholder={f.p}
@@ -562,14 +606,14 @@ export default function Admin() {
                         </div>
                       ))}
                       <div>
-                        <label className="block text-xs text-muted-foreground mb-1">Сумма ₽ *</label>
+                        <label className="block text-xs text-muted-foreground mb-1">Кол-во / Сумма *</label>
                         <input type="number" value={taxForm.amount} onChange={e => setTaxForm(p => ({ ...p, amount: e.target.value }))} placeholder="0"
                           className="w-full bg-background border border-border px-3 py-2 text-sm font-mono text-foreground focus:outline-none focus:border-[hsl(var(--primary))]" required disabled={taxSaving} />
                       </div>
                       <div>
                         <label className="block text-xs text-muted-foreground mb-1">Статус</label>
                         <select value={taxForm.status} onChange={e => setTaxForm(p => ({ ...p, status: e.target.value }))} className="w-full bg-background border border-border px-3 py-2 text-sm text-foreground focus:outline-none focus:border-[hsl(var(--primary))]" disabled={taxSaving}>
-                          <option value="pending">Ожидает</option><option value="paid">Оплачен</option><option value="overdue">Просрочен</option><option value="cancelled">Отменён</option>
+                          <option value="pending">Активен</option><option value="paid">Завершён</option><option value="overdue">Заблокирован</option><option value="cancelled">Удалён</option>
                         </select>
                       </div>
                       <div>
@@ -590,7 +634,7 @@ export default function Admin() {
                   </form>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2"><Icon name="FileText" size={12} />Записи <span className="font-mono ml-auto">{records.length}</span></p>
+                  <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2"><Icon name="Package" size={12} />Предметы и записи <span className="font-mono ml-auto">{records.length}</span></p>
                   {recordsLoading ? <div className="text-muted-foreground text-sm text-center py-8 border border-border">Загрузка...</div> :
                     records.length === 0 ? <div className="text-muted-foreground text-sm text-center py-8 border border-border">Нет записей</div> : (
                       <div className="border border-border overflow-hidden">
@@ -601,7 +645,7 @@ export default function Admin() {
                               <div><p className="text-sm font-mono">{fmt(rec.amount)}</p>{rec.due_date && <p className="text-[10px] text-muted-foreground">до {fmtShort(rec.due_date)}</p>}</div>
                               <select value={rec.status} disabled={updatingStatus === rec.id} onChange={e => handleUpdateStatus(rec.id, e.target.value)}
                                 className={`text-xs px-2 py-1 border cursor-pointer focus:outline-none disabled:opacity-50 ${STATUS_COLORS[rec.status]}`}>
-                                <option value="pending">Ожидает</option><option value="paid">Оплачен</option><option value="overdue">Просрочен</option><option value="cancelled">Отменён</option>
+                                <option value="pending">Активен</option><option value="paid">Завершён</option><option value="overdue">Заблокирован</option><option value="cancelled">Удалён</option>
                               </select>
                               <div>{rec.description && <p className="text-xs text-muted-foreground truncate">{rec.description}</p>}</div>
                             </div>
@@ -627,7 +671,7 @@ export default function Admin() {
               <form onSubmit={handleAddFine} className="space-y-4">
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Клиент *</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Игрок *</label>
                     <select value={fineForm.user_id} onChange={e => setFineForm(p => ({ ...p, user_id: e.target.value }))} className="w-full bg-background border border-border px-3 py-2 text-sm text-foreground focus:outline-none focus:border-[hsl(var(--primary))]" required disabled={fineSaving}>
                       <option value="">Выберите...</option>
                       {users.map(u => <option key={u.id} value={u.id}>{u.full_name} ({u.client_id})</option>)}
