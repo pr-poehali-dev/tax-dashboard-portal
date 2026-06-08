@@ -42,7 +42,7 @@ type AdminTab = 'dashboard' | 'clients' | 'notes' | 'fines' | 'calc' | 'report' 
 
 const TABS: { id: AdminTab; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Дашборд', icon: 'LayoutDashboard' },
-  { id: 'clients', label: 'Игроки', icon: 'Users' },
+  { id: 'clients', label: 'Пользователи', icon: 'Users' },
   { id: 'fines', label: 'Штрафы', icon: 'AlertOctagon' },
   { id: 'shop', label: 'Магазин', icon: 'ShoppingBag' },
   { id: 'orders', label: 'Заказы', icon: 'PackageCheck' },
@@ -267,7 +267,7 @@ export default function Admin() {
     e.preventDefault(); setUserErr(''); setUserOk(''); setUserSaving(true);
     const r = await fetch(ADMIN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', ...ah() }, body: JSON.stringify(userForm) });
     const d = await r.json(); setUserSaving(false);
-    if (!r.ok) { setUserErr(d.error || 'Ошибка'); } else { setUserOk(`Клиент ${userForm.client_id} добавлен`); setUserForm({ client_id: '', password: '', full_name: '', inn: '' }); refreshUsers(); }
+    if (!r.ok) { setUserErr(d.error || 'Ошибка'); } else { setUserOk(`Пользователь ${userForm.client_id} добавлен`); setUserForm({ client_id: '', password: '', full_name: '', inn: '' }); refreshUsers(); }
   };
 
   const handleAddTax = async (e: React.FormEvent) => {
@@ -381,7 +381,7 @@ export default function Admin() {
       const totalOverdue = summaryData.reduce((s, r) => s + r.overdue, 0);
       const totalFines = summaryData.reduce((s, r) => s + r.fines, 0);
       doc.setFontSize(9);
-      doc.text(`Всего клиентов: ${summaryData.length}`, 14, 36);
+      doc.text(`Всего пользователей: ${summaryData.length}`, 14, 36);
       doc.text(`Итого оплачено: ${fmtRub(totalPaid)}`, 14, 42);
       doc.text(`Итого к оплате: ${fmtRub(totalPending)}`, 14, 48);
       doc.text(`Итого просрочено: ${fmtRub(totalOverdue)}`, 14, 54);
@@ -389,7 +389,7 @@ export default function Admin() {
 
       autoTable(doc, {
         startY: totalFines > 0 ? 66 : 62,
-        head: [['Клиент', 'ID клиента', 'ИНН', 'Оплачено', 'К оплате', 'Просрочено', 'Штрафы']],
+        head: [['Пользователь', 'ID', 'ИНН', 'Оплачено', 'К оплате', 'Просрочено', 'Штрафы']],
         body: summaryData.map(r => [
           r.full_name,
           r.client_id,
@@ -408,7 +408,7 @@ export default function Admin() {
       const client = reportData[0];
       if (client) {
         doc.setFontSize(12); doc.setFont('helvetica', 'bold');
-        doc.text(`Клиент: ${client.full_name}`, 14, 36);
+        doc.text(`Пользователь: ${client.full_name}`, 14, 36);
         doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
         doc.text(`Идентификатор: ${client.client_id}`, 14, 43);
         doc.text(`ИНН: ${client.inn || 'не указан'}`, 14, 49);
@@ -610,9 +610,9 @@ export default function Admin() {
         <div className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 57px)' }}>
           <div className="w-72 border-r border-border flex flex-col shrink-0 overflow-hidden">
             <div className="p-4 border-b border-border shrink-0">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2"><Icon name="UserPlus" size={12} />Новый игрок</p>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2"><Icon name="UserPlus" size={12} />Новый пользователь</p>
               <form onSubmit={handleAddUser} className="space-y-2">
-                {[{ k: 'client_id', l: 'Ник / ID *', p: 'Steve2024' }, { k: 'password', l: 'Пароль *', p: '••••••••', t: 'password' }, { k: 'full_name', l: 'Имя игрока *', p: 'Иванов Иван' }, { k: 'inn', l: 'Доп. инфо', p: 'Discord, VK...' }].map(f => (
+                {[{ k: 'client_id', l: 'Логин *', p: 'ivanov_ivan' }, { k: 'password', l: 'Пароль *', p: '••••••••', t: 'password' }, { k: 'full_name', l: 'Имя *', p: 'Иванов Иван' }, { k: 'inn', l: 'ИНН', p: '000000000000' }].map(f => (
                   <div key={f.k}>
                     <label className="block text-[10px] text-muted-foreground mb-0.5">{f.l}</label>
                     <input type={f.t || 'text'} value={(userForm as Record<string, string>)[f.k]} onChange={e => setUserForm(p => ({ ...p, [f.k]: e.target.value }))} placeholder={f.p}
@@ -626,7 +626,7 @@ export default function Admin() {
             </div>
             <div className="flex-1 overflow-y-auto">
               <div className="px-4 py-2 border-b border-border sticky top-0 bg-background">
-                <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Icon name="Users" size={11} />Игроки <span className="ml-auto font-mono">{users.length}</span></p>
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Icon name="Users" size={11} />Пользователи <span className="ml-auto font-mono">{users.length}</span></p>
               </div>
               {loadingUsers ? <div className="text-muted-foreground text-xs text-center py-6">...</div> : users.map(u => (
                 <div key={u.id} onClick={() => openUser(u)} className={`px-4 py-2.5 border-b border-border cursor-pointer hover:bg-accent flex items-center justify-between group ${selectedUser?.id === u.id ? 'bg-accent' : ''}`}>
@@ -642,7 +642,7 @@ export default function Admin() {
           <div className="flex-1 overflow-y-auto p-6">
             {!selectedUser ? (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                <Icon name="MousePointerClick" size={28} className="mb-3 opacity-20" /><p className="text-sm">Выберите клиента</p>
+                <Icon name="MousePointerClick" size={28} className="mb-3 opacity-20" /><p className="text-sm">Выберите пользователя</p>
               </div>
             ) : (
               <div className="max-w-3xl space-y-6">
@@ -657,10 +657,10 @@ export default function Admin() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2"><Icon name="Plus" size={12} />Добавить предмет / запись</p>
+                  <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2"><Icon name="Plus" size={12} />Добавить запись</p>
                   <form onSubmit={handleAddTax} className="space-y-3">
                     <div className="grid grid-cols-3 gap-3">
-                      {[{ k: 'tax_type', l: 'Название *', p: 'Алмазный меч, Земля...' }, { k: 'period', l: 'Категория *', p: 'weapon, land, bank...' }].map(f => (
+                      {[{ k: 'tax_type', l: 'Название *', p: 'Налог, штраф, актив...' }, { k: 'period', l: 'Тип *', p: 'Период / категория' }].map(f => (
                         <div key={f.k}>
                           <label className="block text-xs text-muted-foreground mb-1">{f.l}</label>
                           <input value={(taxForm as Record<string, string>)[f.k]} onChange={e => setTaxForm(p => ({ ...p, [f.k]: e.target.value }))} placeholder={f.p}
@@ -733,7 +733,7 @@ export default function Admin() {
               <form onSubmit={handleAddFine} className="space-y-4">
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Игрок *</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Пользователь *</label>
                     <select value={fineForm.user_id} onChange={e => setFineForm(p => ({ ...p, user_id: e.target.value }))} className="w-full bg-background border border-border px-3 py-2 text-sm text-foreground focus:outline-none focus:border-[hsl(var(--primary))]" required disabled={fineSaving}>
                       <option value="">Выберите...</option>
                       {users.map(u => <option key={u.id} value={u.id}>{u.full_name} ({u.client_id})</option>)}
@@ -811,7 +811,7 @@ export default function Admin() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Клиент (опционально)</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Пользователь (опционально)</label>
                     <select value={noteForm.user_id} onChange={e => setNoteForm(p => ({ ...p, user_id: e.target.value }))} className="w-full bg-background border border-border px-3 py-2 text-sm text-foreground focus:outline-none focus:border-[hsl(var(--primary))]">
                       <option value="">Общая заметка</option>
                       {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
@@ -857,7 +857,7 @@ export default function Admin() {
                             </div>
                             <p className="text-xs text-muted-foreground whitespace-pre-wrap">{n.content}</p>
                             <p className="text-[10px] text-muted-foreground mt-3">{fmtDate(n.created_at)}</p>
-                            {n.user_id && <p className="text-[10px] text-muted-foreground">Клиент: {users.find(u => u.id === n.user_id)?.full_name}</p>}
+                            {n.user_id && <p className="text-[10px] text-muted-foreground">Польз.: {users.find(u => u.id === n.user_id)?.full_name}</p>}
                           </>
                         )}
                       </div>
@@ -938,7 +938,7 @@ export default function Admin() {
               <button onClick={() => { setReportMode('summary'); loadSummary(); }} className={`px-4 py-2 text-xs uppercase tracking-widest border ${reportMode === 'summary' ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] border-[hsl(var(--primary))]' : 'border-border text-muted-foreground hover:text-foreground'}`}>Сводный по всем</button>
               <div className="flex gap-2 flex-1">
                 <select value={reportUserId} onChange={e => setReportUserId(e.target.value)} className="flex-1 bg-background border border-border px-3 py-2 text-sm text-foreground focus:outline-none focus:border-[hsl(var(--primary))]">
-                  <option value="">По клиенту...</option>
+                  <option value="">По пользователю...</option>
                   {users.map(u => <option key={u.id} value={u.id}>{u.full_name} ({u.client_id})</option>)}
                 </select>
                 <button onClick={loadClientReport} disabled={!reportUserId} className="px-4 py-2 text-xs uppercase tracking-widest border border-border text-muted-foreground hover:text-foreground disabled:opacity-40">Показать</button>
@@ -949,7 +949,7 @@ export default function Admin() {
               summaryData.length === 0 ? <div className="text-muted-foreground text-center py-10 border border-border">Нет данных</div> : (
                 <div className="border border-border overflow-hidden">
                   <div className="grid grid-cols-7 gap-0 border-b border-border bg-muted px-4 py-2">
-                    {['Клиент', 'ID', 'ИНН', 'Оплачено', 'К оплате', 'Просрочено', 'Штрафы'].map(h => <p key={h} className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">{h}</p>)}
+                    {['Пользователь', 'ID', 'ИНН', 'Оплачено', 'К оплате', 'Просрочено', 'Штрафы'].map(h => <p key={h} className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">{h}</p>)}
                   </div>
                   {summaryData.map((r, idx) => (
                     <div key={idx} className={`grid grid-cols-7 gap-0 px-4 py-3 items-center hover:bg-accent ${idx < summaryData.length - 1 ? 'border-b border-border' : ''}`}>
@@ -1060,7 +1060,7 @@ export default function Admin() {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs text-muted-foreground mb-1">Название *</label>
-                    <input value={productForm.name} onChange={e => setProductForm(p => ({ ...p, name: e.target.value }))} placeholder="Алмазный меч" required
+                    <input value={productForm.name} onChange={e => setProductForm(p => ({ ...p, name: e.target.value }))} placeholder="Квартира, автомобиль, товар..." required
                       className="w-full bg-background border border-border px-3 py-2 text-sm focus:outline-none focus:border-[hsl(var(--primary))]" disabled={productSaving} />
                   </div>
                   <div>
@@ -1125,7 +1125,7 @@ export default function Admin() {
         <div className="flex-1 overflow-auto p-8">
           <div className="max-w-4xl mx-auto">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Icon name="PackageCheck" size={12} />Заказы игроков <span className="font-mono">{shopOrders.length}</span></p>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Icon name="PackageCheck" size={12} />Заказы пользователей <span className="font-mono">{shopOrders.length}</span></p>
               <button onClick={fetchShopAdmin} className="text-muted-foreground hover:text-foreground"><Icon name="RefreshCw" size={13} /></button>
             </div>
             {shopLoading ? <div className="text-muted-foreground text-sm text-center py-10 border border-border">Загрузка...</div>
@@ -1133,7 +1133,7 @@ export default function Admin() {
                 : (
                   <div className="border border-border overflow-hidden">
                     <div className="grid grid-cols-6 gap-0 border-b border-border bg-muted px-4 py-2">
-                      {['Заказ', 'Игрок', 'Товары', 'Адрес доставки', 'Сумма', 'Статус'].map(h => <p key={h} className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">{h}</p>)}
+                      {['Заказ', 'Пользователь', 'Товары', 'Адрес доставки', 'Сумма', 'Статус'].map(h => <p key={h} className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">{h}</p>)}
                     </div>
                     {shopOrders.map((o, idx) => (
                       <div key={o.id} className={`grid grid-cols-6 gap-0 px-4 py-3 items-center hover:bg-accent ${idx < shopOrders.length - 1 ? 'border-b border-border' : ''}`}>
@@ -1162,7 +1162,7 @@ export default function Admin() {
       {confirmDeleteUser && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
           <div className="bg-card border border-border p-8 max-w-sm w-full">
-            <div className="flex items-center gap-3 mb-4"><Icon name="AlertTriangle" size={20} className="text-destructive" /><h3 className="font-display text-xl">Удалить клиента?</h3></div>
+            <div className="flex items-center gap-3 mb-4"><Icon name="AlertTriangle" size={20} className="text-destructive" /><h3 className="font-display text-xl">Удалить пользователя?</h3></div>
             <p className="text-sm font-medium mb-1">{confirmDeleteUser.full_name}</p>
             <p className="text-sm text-muted-foreground mb-4">ID: <span className="font-mono">{confirmDeleteUser.client_id}</span></p>
             <p className="text-xs text-destructive border-l-2 border-destructive pl-3 mb-6">Все записи, штрафы и сообщения будут удалены.</p>

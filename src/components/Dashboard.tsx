@@ -47,16 +47,17 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const ITEM_EMOJI: Record<string, string> = {
-  weapon: '⚔️', tool: '⛏️', armor: '🛡️', food: '🍎', block: '🧱', currency: '💰', land: '🌍', misc: '📦',
+  weapon: '🔧', tool: '🛠️', armor: '🏠', food: '🍎', block: '📦', currency: '💰', land: '🌍', misc: '📁',
+  realestate: '🏠', vehicle: '🚗', electronics: '💻', clothing: '👗', other: '📦',
 };
 
 const TABS: { id: Tab; label: string; icon: string; mobileLabel: string }[] = [
-  { id: 'home', label: 'Профиль', icon: 'User', mobileLabel: 'Профиль' },
-  { id: 'inventory', label: 'Инвентарь', icon: 'Package', mobileLabel: 'Инвентарь' },
-  { id: 'bank', label: 'Банк', icon: 'Landmark', mobileLabel: 'Банк' },
-  { id: 'credits', label: 'Финансы', icon: 'CreditCard', mobileLabel: 'Финансы' },
+  { id: 'home', label: 'Кабинет', icon: 'LayoutDashboard', mobileLabel: 'Кабинет' },
+  { id: 'inventory', label: 'Мои активы', icon: 'Package', mobileLabel: 'Активы' },
+  { id: 'bank', label: 'Счета', icon: 'Landmark', mobileLabel: 'Счета' },
+  { id: 'credits', label: 'Кредиты', icon: 'TrendingUp', mobileLabel: 'Кредиты' },
   { id: 'cards', label: 'Карты', icon: 'Wallet', mobileLabel: 'Карты' },
-  { id: 'shop', label: 'Магазин', icon: 'ShoppingBag', mobileLabel: 'Магазин' },
+  { id: 'shop', label: 'Маркетплейс', icon: 'ShoppingBag', mobileLabel: 'Рынок' },
   { id: 'support', label: 'Поддержка', icon: 'MessageSquare', mobileLabel: 'Чат' },
 ];
 
@@ -319,6 +320,16 @@ export default function Dashboard({ session, onLogout }: Props) {
   const [formErr, setFormErr] = useState('');
   const [error, setError] = useState('');
 
+  // Продажа своего товара
+  const [sellModal, setSellModal] = useState(false);
+  const [sellForm, setSellForm] = useState({ name: '', price: '', category: 'other', description: '', image_url: '' });
+  const [sellLoading, setSellLoading] = useState(false);
+  const [sellMsg, setSellMsg] = useState('');
+  const [sellErr, setSellErr] = useState('');
+
+  // Оплата через банк
+  const [bankPayModal, setBankPayModal] = useState<{ amount: number; purpose: string; recordId?: number } | null>(null);
+
   const H = { 'X-User-Id': String(session.user_id) };
 
   const api = async (url: string, opts?: RequestInit) => {
@@ -424,6 +435,44 @@ export default function Dashboard({ session, onLogout }: Props) {
     else setFormErr(d?.error || 'Ошибка');
   };
 
+  // Разместить объявление о продаже
+  const handleSellProduct = async (e: React.FormEvent) => {
+    e.preventDefault(); setSellMsg(''); setSellErr(''); setSellLoading(true);
+    if (!sellForm.name.trim() || !sellForm.price) { setSellErr('Укажите название и цену'); setSellLoading(false); return; }
+    const d = await api(CABINET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...H, 'X-Action': 'sell_product' },
+      body: JSON.stringify({
+        name: sellForm.name.trim(),
+        price: parseFloat(sellForm.price),
+        category: sellForm.category,
+        description: sellForm.description.trim(),
+        image_url: sellForm.image_url.trim() || null,
+      }),
+    });
+    setSellLoading(false);
+    if (d?.success) { setSellMsg('Объявление размещено!'); setSellForm({ name: '', price: '', category: 'other', description: '', image_url: '' }); fetchShop(); }
+    else setSellErr(d?.error || 'Ошибка');
+  };
+
+  // Оплата через банковский счёт
+  const handleBankPay = async (amount: number, purpose: string, recordId?: number) => {
+    if (!bankRecords.length) { setError('Нет банковских счетов. Обратитесь к администратору.'); return; }
+    setBankPayModal({ amount, purpose, recordId });
+  };
+
+  const confirmBankPay = async () => {
+    if (!bankPayModal) return;
+    const d = await api(CABINET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...H, 'X-Action': 'pay_online' },
+      body: JSON.stringify({ purpose: bankPayModal.purpose, amount: bankPayModal.amount, record_id: bankPayModal.recordId, card_holder: `Банковский счёт #${bankRecords[0]?.id}` }),
+    });
+    setBankPayModal(null);
+    if (d?.success) { fetchRecords(); fetchFinance(); }
+    else setError(d?.error || 'Ошибка списания');
+  };
+
   const bankRecords = records.filter(r => r.tax_type === '__bank__');
   const inventoryRecords = records.filter(r => !['__bank__', '__land__'].includes(r.tax_type) && !r.description?.match(/^\[(ШТРАФ|БАН|МУТ)\]/));
   const punishments = records.filter(r => r.description?.match(/^\[(ШТРАФ|БАН|МУТ)\]/));
@@ -441,7 +490,9 @@ export default function Dashboard({ session, onLogout }: Props) {
         <aside className="hidden md:flex w-56 bg-[hsl(var(--sidebar-background))] border-r border-border flex-col shrink-0">
           <div className="p-4 border-b border-border">
             <div className="flex items-center gap-2.5 mb-3">
-              <div className="w-10 h-10 bg-[hsl(var(--primary))]/10 border border-[hsl(var(--primary))]/30 flex items-center justify-center text-xl">⛏️</div>
+              <div className="w-10 h-10 bg-[hsl(var(--primary))]/10 border border-[hsl(var(--primary))]/30 flex items-center justify-center">
+                <Icon name="User" size={18} className="text-[hsl(var(--primary))]" />
+              </div>
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">{session.full_name}</p>
                 <p className="text-[10px] text-muted-foreground font-mono">{session.client_id}</p>
@@ -472,7 +523,7 @@ export default function Dashboard({ session, onLogout }: Props) {
           {/* Mobile top bar */}
           <header className="md:hidden border-b border-border px-4 py-3 flex items-center justify-between shrink-0 bg-[hsl(var(--sidebar-background))]">
             <div className="flex items-center gap-2">
-              <span className="text-xl">⛏️</span>
+              <Icon name="LayoutDashboard" size={18} className="text-[hsl(var(--primary))]" />
               <div>
                 <p className="text-sm font-medium text-foreground">{session.full_name}</p>
                 <p className="text-[10px] text-muted-foreground font-mono">{session.client_id}</p>
@@ -505,11 +556,13 @@ export default function Dashboard({ session, onLogout }: Props) {
                 <div className="max-w-lg mx-auto space-y-4">
                   <div className="border border-[hsl(var(--primary))]/30 bg-gradient-to-br from-[hsl(var(--primary))]/10 to-transparent p-5">
                     <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 bg-[hsl(var(--primary))]/20 border-2 border-[hsl(var(--primary))]/40 flex items-center justify-center text-3xl shrink-0">⛏️</div>
+                      <div className="w-14 h-14 bg-[hsl(var(--primary))]/20 border-2 border-[hsl(var(--primary))]/40 flex items-center justify-center shrink-0">
+                        <Icon name="User" size={26} className="text-[hsl(var(--primary))]" />
+                      </div>
                       <div>
                         <h2 className="font-display text-2xl">{session.full_name}</h2>
-                        <p className="text-xs text-muted-foreground font-mono">ID: {session.client_id}</p>
-                        {session.inn && <p className="text-xs text-muted-foreground">{session.inn}</p>}
+                        <p className="text-xs text-muted-foreground font-mono">Логин: {session.client_id}</p>
+                        {session.inn && <p className="text-xs text-muted-foreground">ИНН: {session.inn}</p>}
                       </div>
                     </div>
                   </div>
@@ -533,11 +586,11 @@ export default function Dashboard({ session, onLogout }: Props) {
                     <div className="grid grid-cols-3 gap-2">
                       {[
                         { icon: 'Banknote', label: 'Оплатить', action: () => pendingTaxes.length > 0 && setPayModal({ amount: pendingTaxes[0].amount, purpose: pendingTaxes[0].tax_type, recordId: pendingTaxes[0].id }) },
-                        { icon: 'ShoppingBag', label: 'Магазин', action: () => setActiveTab('shop') },
-                        { icon: 'MessageSquare', label: 'Чат', action: () => setActiveTab('support') },
+                        { icon: 'Tag', label: 'Продать', action: () => { setActiveTab('shop'); setSellModal(true); setSellMsg(''); setSellErr(''); } },
+                        { icon: 'ShoppingBag', label: 'Маркетплейс', action: () => setActiveTab('shop') },
                         { icon: 'CreditCard', label: 'Карта', action: () => { setActiveTab('cards'); setCardModal(true); } },
                         { icon: 'TrendingUp', label: 'Вклад', action: () => { setActiveTab('credits'); setDepositModal(true); setFormMsg(''); setFormErr(''); } },
-                        { icon: 'Wallet', label: 'Кредит', action: () => { setActiveTab('credits'); setCreditModal(true); setFormMsg(''); setFormErr(''); } },
+                        { icon: 'MessageSquare', label: 'Поддержка', action: () => setActiveTab('support') },
                       ].map(a => (
                         <button key={a.label} onClick={a.action} className="border border-border p-3 flex flex-col items-center gap-1.5 hover:bg-accent hover:border-[hsl(var(--primary))]/50 transition-colors">
                           <Icon name={a.icon} size={18} className="text-[hsl(var(--primary))]" />
@@ -558,13 +611,14 @@ export default function Dashboard({ session, onLogout }: Props) {
                 </div>
               )}
 
-              {/* ===== ИНВЕНТАРЬ ===== */}
+              {/* ===== МОИ АКТИВЫ ===== */}
               {activeTab === 'inventory' && (
                 <div className="max-w-2xl mx-auto">
                   {loadingRecords ? <div className="text-center py-16 text-muted-foreground">Загрузка...</div>
                     : inventoryRecords.length === 0 ? (
                       <div className="text-center py-16 border border-border">
-                        <p className="text-4xl mb-3">📦</p><p className="text-sm text-muted-foreground">Инвентарь пуст</p>
+                        <p className="text-3xl mb-3">📄</p><p className="text-sm text-muted-foreground">Активов нет</p>
+                        <p className="text-xs text-muted-foreground mt-1">Записи добавит администратор</p>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -582,10 +636,16 @@ export default function Dashboard({ session, onLogout }: Props) {
                                 <div className="flex items-center justify-between mt-2">
                                   <p className="text-xs font-mono">{fmt(r.amount)}</p>
                                   {r.status === 'pending' && (
-                                    <button onClick={() => setPayModal({ amount: r.amount, purpose: r.tax_type, recordId: r.id })}
-                                      className="text-[10px] px-2 py-0.5 bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] uppercase tracking-widest hover:opacity-90">
-                                      Оплатить
-                                    </button>
+                                    <div className="flex gap-1.5">
+                                      <button onClick={() => setPayModal({ amount: r.amount, purpose: r.tax_type, recordId: r.id })}
+                                        className="text-[10px] px-2 py-0.5 bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] uppercase tracking-widest hover:opacity-90">
+                                        Картой
+                                      </button>
+                                      <button onClick={() => handleBankPay(r.amount, r.tax_type, r.id)}
+                                        className="text-[10px] px-2 py-0.5 border border-[hsl(var(--primary))]/50 text-[hsl(var(--primary))] uppercase tracking-widest hover:bg-[hsl(var(--primary))]/10">
+                                        Банком
+                                      </button>
+                                    </div>
                                   )}
                                 </div>
                               </div>
@@ -741,12 +801,18 @@ export default function Dashboard({ session, onLogout }: Props) {
                 </div>
               )}
 
-              {/* ===== МАГАЗИН ===== */}
+              {/* ===== МАРКЕТПЛЕЙС ===== */}
               {activeTab === 'shop' && (
                 <div className="max-w-2xl mx-auto">
                   <div className="flex items-center justify-between mb-4">
-                    <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Каталог товаров</p>
-                    <button onClick={fetchShop} className="text-muted-foreground hover:text-foreground"><Icon name="RefreshCw" size={14} /></button>
+                    <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Маркетплейс</p>
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => { setSellModal(true); setSellMsg(''); setSellErr(''); }}
+                        className="flex items-center gap-1.5 text-[10px] text-[hsl(var(--primary))] uppercase tracking-widest hover:opacity-80 border border-[hsl(var(--primary))]/40 px-3 py-1.5">
+                        <Icon name="Plus" size={12} />Разместить объявление
+                      </button>
+                      <button onClick={fetchShop} className="text-muted-foreground hover:text-foreground"><Icon name="RefreshCw" size={14} /></button>
+                    </div>
                   </div>
                   {loadingShop ? <div className="text-center py-16 text-muted-foreground">Загрузка каталога...</div>
                     : products.length === 0 ? (
@@ -948,6 +1014,111 @@ export default function Dashboard({ session, onLogout }: Props) {
                 {formLoading ? 'Оформляем...' : 'Оформить карту'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка: разместить объявление о продаже */}
+      {sellModal && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="w-full sm:max-w-md bg-card border border-border rounded-t-2xl sm:rounded-none p-6 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-display text-xl">Разместить объявление</h3>
+              <button onClick={() => setSellModal(false)} className="text-muted-foreground hover:text-foreground"><Icon name="X" size={20} /></button>
+            </div>
+            <form onSubmit={handleSellProduct} className="space-y-3">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">Название *</label>
+                <input value={sellForm.name} onChange={e => setSellForm(p => ({ ...p, name: e.target.value }))} placeholder="Квартира, автомобиль, ноутбук..." required
+                  className="w-full bg-background border border-border px-3 py-2.5 text-sm focus:outline-none focus:border-[hsl(var(--primary))]" disabled={sellLoading} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">Цена ₽ *</label>
+                  <input type="number" value={sellForm.price} onChange={e => setSellForm(p => ({ ...p, price: e.target.value }))} placeholder="0" required
+                    className="w-full bg-background border border-border px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-[hsl(var(--primary))]" disabled={sellLoading} />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">Категория</label>
+                  <select value={sellForm.category} onChange={e => setSellForm(p => ({ ...p, category: e.target.value }))}
+                    className="w-full bg-background border border-border px-3 py-2.5 text-sm focus:outline-none focus:border-[hsl(var(--primary))]" disabled={sellLoading}>
+                    <option value="realestate">Недвижимость</option>
+                    <option value="vehicle">Транспорт</option>
+                    <option value="electronics">Электроника</option>
+                    <option value="clothing">Одежда</option>
+                    <option value="other">Другое</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">Описание</label>
+                <textarea value={sellForm.description} onChange={e => setSellForm(p => ({ ...p, description: e.target.value }))} rows={3}
+                  placeholder="Подробное описание товара, состояние, характеристики..."
+                  className="w-full bg-background border border-border px-3 py-2 text-sm resize-none focus:outline-none focus:border-[hsl(var(--primary))]" disabled={sellLoading} />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5 uppercase tracking-wider">Ссылка на фото</label>
+                <input value={sellForm.image_url} onChange={e => setSellForm(p => ({ ...p, image_url: e.target.value }))} placeholder="https://..."
+                  className="w-full bg-background border border-border px-3 py-2.5 text-sm focus:outline-none focus:border-[hsl(var(--primary))]" disabled={sellLoading} />
+              </div>
+              {sellErr && <p className="text-destructive text-xs border-l-2 border-destructive pl-2">{sellErr}</p>}
+              {sellMsg && (
+                <div className="flex items-center gap-2 text-green-400 text-sm border border-green-400/30 bg-green-400/10 px-3 py-2">
+                  <Icon name="Check" size={15} />{sellMsg}
+                  <button type="button" onClick={() => { setSellModal(false); setSellMsg(''); }} className="ml-auto text-xs underline">Закрыть</button>
+                </div>
+              )}
+              {!sellMsg && (
+                <button type="submit" disabled={sellLoading}
+                  className="w-full py-3 bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] text-sm font-semibold uppercase tracking-widest hover:opacity-90 disabled:opacity-50">
+                  {sellLoading ? 'Публикуем...' : 'Опубликовать объявление'}
+                </button>
+              )}
+              <p className="text-[10px] text-muted-foreground text-center">Объявление проходит модерацию администратора</p>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка: оплата через банковский счёт */}
+      {bankPayModal && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="w-full sm:max-w-sm bg-card border border-border rounded-t-2xl sm:rounded-none p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-display text-xl">Оплата через банк</h3>
+              <button onClick={() => setBankPayModal(null)} className="text-muted-foreground hover:text-foreground"><Icon name="X" size={20} /></button>
+            </div>
+            <div className="border border-border p-4 mb-5">
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Назначение</p>
+              <p className="text-sm font-medium">{bankPayModal.purpose}</p>
+              <p className="font-display text-2xl text-[hsl(var(--primary))] mt-2">{fmtMoney(bankPayModal.amount)}</p>
+            </div>
+            {bankRecords.length > 0 ? (
+              <>
+                <div className="border border-[hsl(var(--primary))]/30 bg-[hsl(var(--primary))]/5 p-3 mb-4">
+                  <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Счёт списания</p>
+                  <p className="text-sm font-medium">{bankRecords[0].tax_type}</p>
+                  <p className="text-xs text-muted-foreground">Баланс: {fmtMoney(bankRecords[0].amount)}</p>
+                  {bankRecords[0].amount < bankPayModal.amount && (
+                    <p className="text-xs text-destructive mt-1">⚠ Недостаточно средств на счёте</p>
+                  )}
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={confirmBankPay} disabled={bankRecords[0].amount < bankPayModal.amount}
+                    className="flex-1 py-3 bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] text-sm font-semibold uppercase tracking-widest hover:opacity-90 disabled:opacity-50">
+                    Подтвердить
+                  </button>
+                  <button onClick={() => setBankPayModal(null)} className="px-4 py-3 border border-border text-muted-foreground text-xs uppercase tracking-widest hover:bg-accent">
+                    Отмена
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-4">
+                <p className="text-sm text-muted-foreground">Нет банковских счетов</p>
+                <button onClick={() => { setBankPayModal(null); setActiveTab('bank'); }} className="text-xs text-[hsl(var(--primary))] mt-2 hover:opacity-80">Перейти в Счета</button>
+              </div>
+            )}
           </div>
         </div>
       )}

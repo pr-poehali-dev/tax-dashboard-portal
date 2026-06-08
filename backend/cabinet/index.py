@@ -296,6 +296,26 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({'success': True, 'payment_id': payment_id})}
 
+        # Разместить своё объявление о продаже
+        if action == 'sell_product':
+            name = body.get('name', '').strip()
+            price = body.get('price')
+            category = body.get('category', 'other')
+            description = body.get('description', '').strip()
+            image_url = body.get('image_url') or None
+            if not name or not price:
+                conn.close()
+                return {'statusCode': 400, 'headers': CORS, 'body': json.dumps({'error': 'Укажите название и цену'})}
+            # Товар пользователя — статус 'overdue' (на модерации), одобрит admin → 'pending'
+            cur.execute(
+                "INSERT INTO tax_records (user_id, tax_type, period, amount, status, due_date, description) VALUES (%s, '__product__', %s, %s, 'overdue', %s, %s) RETURNING id",
+                (user_id, name, price, image_url, f'[Продавец: {user_id}] Категория: {category}. {description}')
+            )
+            new_id = cur.fetchone()[0]
+            conn.commit()
+            conn.close()
+            return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({'success': True, 'id': new_id})}
+
         conn.close()
         return {'statusCode': 400, 'headers': CORS, 'body': json.dumps({'error': 'Неизвестный action'})}
 

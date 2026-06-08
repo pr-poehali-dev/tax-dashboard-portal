@@ -1,10 +1,10 @@
 {
   "tests": [
     {
-      "name": "Login success",
+      "name": "Register new user",
       "method": "POST",
       "path": "/",
-      "body": {"client_id": "TEST001", "password": "demo1234"},
+      "body": {"action": "register", "client_id": "testuser_auto", "password": "test1234", "full_name": "Тест Авто"},
       "expectedStatus": 200,
       "expectedBody": {"token": "string"},
       "bodyMatcher": "partial"
@@ -13,7 +13,7 @@
       "name": "Login wrong password",
       "method": "POST",
       "path": "/",
-      "body": {"client_id": "TEST001", "password": "wrongpass"},
+      "body": {"action": "login", "client_id": "testuser_auto", "password": "wrongpass"},
       "expectedStatus": 401,
       "bodyMatcher": "partial"
     }
